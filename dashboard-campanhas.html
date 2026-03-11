@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Campanha do Mês</title>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;600;700;800;900&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyD97GqjsexVuAwgMpiZ4xpmX-9VC7ee-1o",
+      authDomain: "dashboard-campanhas-427c5.firebaseapp.com",
+      projectId: "dashboard-campanhas-427c5",
+      storageBucket: "dashboard-campanhas-427c5.firebasestorage.app",
+      messagingSenderId: "174470166443",
+      appId: "1:174470166443:web:7052e4682a4f6aae6d84ee",
+      measurementId: "G-HVEEHR49TP"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+  </script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Lato','Segoe UI',sans-serif;background:#f8fafc;}
+    input,select,textarea,button{font-family:'Lato','Segoe UI',sans-serif;}
+    ::-webkit-scrollbar{width:6px;height:6px;}
+    ::-webkit-scrollbar-track{background:#f1f5f9;}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+// ── Assessores iniciais (carregados no Firebase na primeira vez) ───────────────
+const ASSESSORES_INICIAIS = [
+  { codigo: "admin",  senha: "admin123",  nome: "Administrador"           },
+  { codigo: "45966",  senha: "senha456",  nome: "Felipe Ribeiro"          },
+  { codigo: "41812",  senha: "123456789", nome: "Katryne Ludvichak Maciel" },
+];
+
+// ── helpers localStorage (para dados de ofertas/clientes por assessor) ────────
+const lsKey = (assessor, tipo) => `campanha_${assessor}_${tipo}`;
+const lsGet = (key, fallback)  => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch(e){ return fallback; } };
+const lsSet = (key, val)       => { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} };
+const lsDel = (key)            => { try { localStorage.removeItem(key); } catch(e){} };
+
+// ── Tela Gerenciar Assessores — Firebase ─────────────────────────────────────
+function GerenciarAssessores({ assessores, setAssessores, onVoltar }) {
+  const [form, setForm]         = useState({ codigo:"", nome:"", senha:"", confirmar:"" });
+  const [editando, setEditando] = useState(null);
+  const [erro, setErro]         = useState("");
+  const [sucesso, setSucesso]   = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [showSenha, setShowSenha] = useState(false);
+
+  const limpar = () => { setForm({ codigo:"", nome:"", senha:"", confirmar:"" }); setEditando(null); setErro(""); };
+
+  const salvar = async () => {
+    setErro(""); setSucesso("");
+    if (!form.codigo.trim() || !form.nome.trim() || !form.senha.trim()) { setErro("Preencha código, nome e senha."); return; }
+    if (form.senha !== form.confirmar) { setErro("As senhas não coincidem."); return; }
+    if (!editando && assessores.find(a => a.codigo === form.codigo.trim())) { setErro("Este código já está cadastrado."); return; }
+
+    setSalvando(true);
+    try {
+      const dados = { codigo: form.codigo.trim(), nome: form.nome.trim(), senha: form.senha };
+      await db.collection("assessores").doc(dados.codigo).set(dados);
+      const nova = editando
+        ? assessores.map(a => a.codigo === editando ? dados : a)
+        : [...assessores, dados];
+      setAssessores(nova);
+      setSucesso(editando ? `${form.nome} atualizado com sucesso!` : `${form.nome} cadastrado com sucesso!`);
+      limpar();
+    } catch(e) {
+      setErro("Erro ao salvar. Verifique sua conexão.");
+    }
+    setSalvando(false);
+  };
+
+  const excluir = async (codigo) => {
+    if (codigo === "admin") { setErro("O administrador não pode ser removido."); return; }
+    if (!window.confirm(`Excluir o assessor ${codigo}?`)) return;
+    setSalvando(true);
+    try {
+      await db.collection("assessores").doc(codigo).delete();
+      setAssessores(assessores.filter(a => a.codigo !== codigo));
+      setSucesso("Assessor removido.");
+    } catch(e) { setErro("Erro ao excluir."); }
+    setSalvando(false);
+  };
+
+  const iniciarEdicao = (a) => {
+    setEditando(a.codigo);
+    setForm({ codigo: a.codigo, nome: a.nome, senha: a.senha, confirmar: a.senha });
+    setErro(""); setSucesso("");
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",fontFamily:"'Lato','Segoe UI',sans-serif"}}>
+      <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"0 32px"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:62}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,background:"#0f172a",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{color:"#fff",fontSize:17}}>🎯</span>
+            </div>
+            <div>
+              <div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>Campanha do Mês</div>
+              <div style={{fontSize:11,color:"#94a3b8"}}>Gerenciamento de Assessores</div>
+            </div>
+          </div>
+          <button onClick={onVoltar} style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"8px 18px",fontSize:13,fontWeight:700,color:"#374151",cursor:"pointer"}}>
+            ← Voltar ao Dashboard
+          </button>
+        </div>
+      </div>
+
+      <div style={{maxWidth:900,margin:"0 auto",padding:"30px 32px"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,alignItems:"start"}}>
+
+          {/* Formulário */}
+          <div style={{background:"#fff",borderRadius:20,padding:"28px",border:"1px solid #f0f0f0",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+            <h2 style={{fontSize:17,fontWeight:800,color:"#0f172a",margin:"0 0 20px"}}>
+              {editando ? "✏️ Editar Assessor" : "➕ Novo Assessor"}
+            </h2>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Código do Assessor</label>
+              <input type="text" placeholder="Ex: 69570" value={form.codigo} disabled={!!editando}
+                onChange={e=>setForm({...form,codigo:e.target.value})}
+                style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none",background:editando?"#f8fafc":"#fff",color:editando?"#94a3b8":"#0f172a"}}/>
+              {editando && <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>O código não pode ser alterado</div>}
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Nome completo</label>
+              <input type="text" placeholder="Ex: João Pereira" value={form.nome}
+                onChange={e=>setForm({...form,nome:e.target.value})}
+                style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+            </div>
+
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Senha</label>
+              <div style={{position:"relative"}}>
+                <input type={showSenha?"text":"password"} placeholder="Crie uma senha" value={form.senha}
+                  onChange={e=>setForm({...form,senha:e.target.value})}
+                  style={{width:"100%",padding:"10px 44px 10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+                <button onClick={()=>setShowSenha(!showSenha)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:15,color:"#94a3b8",padding:0}}>
+                  {showSenha?"🙈":"👁"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{marginBottom:20}}>
+              <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Confirmar senha</label>
+              <input type={showSenha?"text":"password"} placeholder="Repita a senha" value={form.confirmar}
+                onChange={e=>setForm({...form,confirmar:e.target.value})}
+                style={{width:"100%",padding:"10px 13px",border:`1px solid ${form.confirmar&&form.confirmar!==form.senha?"#fca5a5":"#e2e8f0"}`,borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+              {form.confirmar && form.confirmar!==form.senha && <div style={{fontSize:11,color:"#dc2626",marginTop:3}}>As senhas não coincidem</div>}
+            </div>
+
+            {erro    && <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#dc2626",fontWeight:600}}>⚠️ {erro}</div>}
+            {sucesso && <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#16a34a",fontWeight:600}}>✅ {sucesso}</div>}
+
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={salvar} disabled={salvando}
+                style={{flex:1,padding:"11px",borderRadius:10,border:"none",background:salvando?"#94a3b8":"#0f172a",color:"#fff",fontSize:14,fontWeight:700,cursor:salvando?"not-allowed":"pointer"}}>
+                {salvando ? "Salvando..." : editando ? "Salvar alterações" : "Cadastrar assessor"}
+              </button>
+              {editando && (
+                <button onClick={limpar} style={{padding:"11px 16px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",color:"#64748b"}}>
+                  Cancelar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div style={{background:"#fff",borderRadius:20,border:"1px solid #f0f0f0",boxShadow:"0 1px 4px rgba(0,0,0,0.05)",overflow:"hidden"}}>
+            <div style={{padding:"20px 24px",borderBottom:"1px solid #f0f0f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <h2 style={{fontSize:17,fontWeight:800,color:"#0f172a",margin:0}}>👥 Assessores cadastrados</h2>
+              <span style={{background:"#eff6ff",color:"#2563eb",padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:700}}>{assessores.length}</span>
+            </div>
+            <div style={{maxHeight:480,overflowY:"auto"}}>
+              {assessores.map((a,i)=>(
+                <div key={a.codigo} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 24px",borderBottom:i<assessores.length-1?"1px solid #f8fafc":"none"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#fafbfc"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:38,height:38,borderRadius:10,background:a.codigo==="admin"?"#0f172a":"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+                      {a.codigo==="admin"?"🔑":"👤"}
+                    </div>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#0f172a"}}>{a.nome}</div>
+                      <div style={{fontSize:12,color:"#94a3b8"}}>Código: {a.codigo}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>iniciarEdicao(a)} style={{background:"#f1f5f9",border:"none",borderRadius:7,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",color:"#374151"}}>✏️ Editar</button>
+                    {a.codigo!=="admin" && (
+                      <button onClick={()=>excluir(a.codigo)} style={{background:"#fef2f2",border:"none",borderRadius:7,padding:"6px 12px",fontSize:11,fontWeight:700,cursor:"pointer",color:"#dc2626"}}>🗑</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Tela de Login ─────────────────────────────────────────────────────────────
+function Login({ onLogin, assessores }) {
+  const [codigo, setCodigo]   = useState("");
+  const [senha, setSenha]     = useState("");
+  const [erro, setErro]       = useState("");
+  const [showSenha, setShowSenha] = useState(false);
+
+  const entrar = () => {
+    const assessor = assessores.find(a => a.codigo === codigo.trim() && a.senha === senha);
+    if (assessor) { setErro(""); onLogin(assessor); }
+    else setErro("Código ou senha incorretos. Tente novamente.");
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Lato','Segoe UI',sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:24,padding:"44px 40px",width:400,boxShadow:"0 25px 60px rgba(0,0,0,0.35)"}}>
+
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{width:56,height:56,background:"#0f172a",borderRadius:16,display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:16}}>
+            <span style={{fontSize:28}}>🎯</span>
+          </div>
+          <h1 style={{fontSize:22,fontWeight:800,color:"#0f172a",letterSpacing:"-0.02em"}}>Campanha do Mês</h1>
+          <p style={{fontSize:13,color:"#94a3b8",marginTop:4}}>Acesso exclusivo por assessor</p>
+        </div>
+
+        {/* Campos */}
+        <div style={{marginBottom:16}}>
+          <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>Código do Assessor</label>
+          <input
+            type="text" placeholder="Ex: 69567"
+            value={codigo} onChange={e=>{setCodigo(e.target.value);setErro("");}}
+            onKeyDown={e=>e.key==="Enter"&&entrar()}
+            style={{width:"100%",padding:"12px 14px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none",transition:"border 0.15s"}}
+            onFocus={e=>e.target.style.borderColor="#2563eb"}
+            onBlur={e=>e.target.style.borderColor="#e2e8f0"}
+          />
+        </div>
+        <div style={{marginBottom:8}}>
+          <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>Senha</label>
+          <div style={{position:"relative"}}>
+            <input
+              type={showSenha?"text":"password"} placeholder="Digite sua senha"
+              value={senha} onChange={e=>{setSenha(e.target.value);setErro("");}}
+              onKeyDown={e=>e.key==="Enter"&&entrar()}
+              style={{width:"100%",padding:"12px 44px 12px 14px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none",transition:"border 0.15s"}}
+              onFocus={e=>e.target.style.borderColor="#2563eb"}
+              onBlur={e=>e.target.style.borderColor="#e2e8f0"}
+            />
+            <button onClick={()=>setShowSenha(!showSenha)}
+              style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#94a3b8",padding:0}}>
+              {showSenha?"🙈":"👁"}
+            </button>
+          </div>
+        </div>
+
+        {/* Erro */}
+        {erro && (
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#dc2626",fontWeight:600}}>
+            ⚠️ {erro}
+          </div>
+        )}
+
+        <button onClick={entrar}
+          style={{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontSize:15,fontWeight:700,cursor:"pointer",marginTop:8,transition:"background 0.15s"}}
+          onMouseEnter={e=>e.target.style.background="#1e293b"}
+          onMouseLeave={e=>e.target.style.background="#0f172a"}>
+          Entrar →
+        </button>
+
+        <p style={{textAlign:"center",fontSize:11,color:"#cbd5e1",marginTop:20}}>
+          Seus dados são salvos exclusivamente para o seu código de acesso
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const ofertasIniciais = [
+  { id: 1, produto: "CDB Banco XYZ 120% CDI",  tipo: "RF Bancários",  roa: 0.80, roaAssessor: 0.40, volumeAlvo: 500000,  prazo: "12 meses" },
+  { id: 2, produto: "FII XPML11",               tipo: "FII",           roa: 0.50, roaAssessor: 0.25, volumeAlvo: 300000,  prazo: "Aberto"   },
+  { id: 3, produto: "Tesouro IPCA+ 2035",       tipo: "RF Públicos",   roa: 0.30, roaAssessor: 0.15, volumeAlvo: 200000,  prazo: "Aberto"   },
+  { id: 4, produto: "Fundo Multimercado Alpha", tipo: "Fundos",        roa: 1.20, roaAssessor: 0.60, volumeAlvo: 800000,  prazo: "D+30"     },
+  { id: 5, produto: "Previdência PGBL 2045",    tipo: "Previdência",   roa: 1.50, roaAssessor: 0.75, volumeAlvo: 400000,  prazo: "Longo"    },
+];
+
+const clientesOfertaInicial = {
+  1: [
+    { conta: "2277088",  segmento: "Express",        status: "ATIVO",   volumeAplicado: 120000, net: 4141294.08  },
+    { conta: "520488",   segmento: "Express",        status: "ATIVO",   volumeAplicado: 95000,  net: -2393007.62 },
+    { conta: "17838958", segmento: "Não Disponível", status: "ATIVO",   volumeAplicado: 80000,  net: 1480189.88  },
+    { conta: "6904331",  segmento: "Não Disponível", status: "ATIVO",   volumeAplicado: 60000,  net: 1368258.98  },
+    { conta: "2624900",  segmento: "Express",        status: "ATIVO",   volumeAplicado: 45000,  net: 3996313.48  },
+    { conta: "6427585",  segmento: "Não Disponível", status: "INATIVO", volumeAplicado: 30000,  net: 1272.38     },
+  ],
+  2: [
+    { conta: "363950",  segmento: "Private", status: "ATIVO", volumeAplicado: 150000, net: 3712149.83 },
+    { conta: "4701273", segmento: "Private", status: "ATIVO", volumeAplicado: 85000,  net: 4928406.97 },
+    { conta: "332938",  segmento: "Unique",  status: "ATIVO", volumeAplicado: 40000,  net: 1209160.18 },
+  ],
+  3: [
+    { conta: "7938963", segmento: "Não Disponível", status: "ATIVO",   volumeAplicado: 70000, net: 2789963.71 },
+    { conta: "2195975", segmento: "Express",        status: "ATIVO",   volumeAplicado: 50000, net: 1306962.46 },
+    { conta: "554703",  segmento: "Express",        status: "ATIVO",   volumeAplicado: 45000, net: 1035094.01 },
+    { conta: "8158086", segmento: "Não Disponível", status: "INATIVO", volumeAplicado: 35000, net: 0          },
+  ],
+  4: [
+    { conta: "2796531", segmento: "Express", status: "ATIVO", volumeAplicado: 300000, net: 7320783.51 },
+    { conta: "3711496", segmento: "Express", status: "ATIVO", volumeAplicado: 200000, net: 6922106.70 },
+    { conta: "2992887", segmento: "Express", status: "ATIVO", volumeAplicado: 180000, net: 6692921.42 },
+    { conta: "2060486", segmento: "Unique",  status: "ATIVO", volumeAplicado: 120000, net: 5375320.01 },
+  ],
+  5: [
+    { conta: "2481600", segmento: "Private", status: "ATIVO", volumeAplicado: 180000, net: 5248415.84 },
+    { conta: "4701273", segmento: "Private", status: "ATIVO", volumeAplicado: 120000, net: 4928406.97 },
+    { conta: "2277088", segmento: "Express", status: "ATIVO", volumeAplicado: 100000, net: 4141294.08 },
+  ],
+};
+
+const KPIs = {
+  totalClientes: 393, ativos: 134, inativos: 259,
+  netMes: 157506416.22, netMesAnterior: 156262694.34,
+  variacaoNet: 157506416.22 - 156262694.34,
+  captacaoLiquida: -50360.70, receitaMes: 10334.53,
+};
+
+const fBRL = (v, compact = false) => {
+  if (compact && Math.abs(v) >= 1_000_000) return `R$ ${(v/1_000_000).toFixed(1)}M`;
+  if (compact && Math.abs(v) >= 1_000)     return `R$ ${(v/1_000).toFixed(1)}k`;
+  return new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:2}).format(v);
+};
+
+const StatusBadge = ({ s }) => {
+  const c = s==="ATIVO" ? {bg:"#dcfce7",color:"#16a34a",dot:"#22c55e"} : {bg:"#f1f5f9",color:"#64748b",dot:"#94a3b8"};
+  return <span style={{background:c.bg,color:c.color,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600,display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:6,height:6,borderRadius:"50%",background:c.dot}}/>{s}</span>;
+};
+
+const KpiCard = ({ label, value, sub, subColor, icon, border }) => (
+  <div style={{background:"#fff",borderRadius:16,padding:"20px 22px",boxShadow:"0 1px 3px rgba(0,0,0,0.06)",border:`1px solid ${border||"#f0f0f0"}`,display:"flex",flexDirection:"column",gap:5}}>
+    <div style={{display:"flex",justifyContent:"space-between"}}>
+      <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",letterSpacing:"0.06em",textTransform:"uppercase"}}>{label}</span>
+      <span style={{fontSize:18}}>{icon}</span>
+    </div>
+    <div style={{fontSize:26,fontWeight:800,color:"#0f172a",letterSpacing:"-0.025em",lineHeight:1.1}}>{value}</div>
+    <div style={{fontSize:12,color:subColor||"#64748b"}}>{sub}</div>
+  </div>
+);
+
+// ── LOTE UPLOAD COMPONENT ─────────────────────────────────────────────────────
+function LoteUpload({ ofertaAtual, segmentosOpcoes, onImportar, onCancelar, fBRL }) {
+  const [modo, setModo] = useState("instrucoes");
+  const [textoCSV, setTextoCSV] = useState("");
+  const [preview, setPreview] = useState([]);
+  const [erros, setErros] = useState([]);
+  const [segPadrao, setSegPadrao] = useState("Express");
+  const [statusPadrao, setStatusPadrao] = useState("ATIVO");
+
+  const baixarModelo = () => {
+    const cabecalho = "Conta;Volume Aplicado (R$);Net em M (R$);Segmento;Status";
+    const exemplos = [
+      "2277088;120000;4141294;Express;ATIVO",
+      "520488;95000;-2393007;Express;ATIVO",
+      "332938;40000;1209160;Unique;ATIVO",
+      "363950;150000;3712149;Private;ATIVO",
+      "7938963;70000;2789963;Não Disponível;ATIVO",
+    ];
+    const instrucoes = [
+      "","--- INSTRUÇÕES ---",
+      "Conta: número da conta do cliente (obrigatório)",
+      "Volume Aplicado: valor em reais sem pontos de milhar (obrigatório)",
+      "Net em M: patrimônio total do cliente (opcional)",
+      "Segmento: Express / Plus / Private / Unique / Não Disponível (opcional)",
+      "Status: ATIVO ou INATIVO (opcional - padrão ATIVO)",
+      "Separador: ponto-e-vírgula (;)",
+      "Apague as linhas de exemplo antes de enviar",
+    ];
+    const conteudo = [cabecalho, ...exemplos, ...instrucoes].join("\n");
+    const blob = new Blob(["\uFEFF"+conteudo], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "modelo_importacao_clientes.csv";
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
+  const parseLinhas = (texto) => {
+    const linhas = texto.trim().split(/\r?\n/).filter(l=>l.trim());
+    const resultado = []; const errosLocal = [];
+    linhas.forEach((linha, i) => {
+      const cols = linha.split(/[;,\t]/).map(c=>c.trim().replace(/"/g,""));
+      const conta = cols[0];
+      const volRaw = cols[1]?.replace(/\./g,"").replace(",",".");
+      const netRaw = cols[2]?.replace(/\./g,"").replace(",",".");
+      const vol = parseFloat(volRaw);
+      const net = parseFloat(netRaw)||0;
+      if (!conta) { errosLocal.push(`Linha ${i+1}: conta vazia`); return; }
+      if (isNaN(vol)||vol<=0) { errosLocal.push(`Linha ${i+1} (${conta}): volume inválido "${cols[1]}"`); return; }
+      resultado.push({ conta, volumeAplicado: vol, net, segmento: cols[3]||segPadrao, status: cols[4]||statusPadrao });
+    });
+    return { resultado, errosLocal };
+  };
+
+  const processar = () => {
+    const { resultado, errosLocal } = parseLinhas(textoCSV);
+    setPreview(resultado); setErros(errosLocal);
+    if (resultado.length>0) setModo("preview");
+  };
+
+  const handleFile = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setTextoCSV(ev.target.result); setModo("colar"); };
+    reader.readAsText(file, "UTF-8");
+  };
+
+  const totalVol = preview.reduce((a,c)=>a+c.volumeAplicado,0);
+  const ganhoTotal = totalVol * (parseFloat(ofertaAtual?.roaAssessor)||0) / 100;
+
+  return (
+    <div>
+      {modo==="instrucoes" && (
+        <>
+          <div style={{background:"#f8fafc",borderRadius:12,padding:"16px 18px",marginBottom:16,border:"1px solid #e2e8f0"}}>
+            <div style={{fontWeight:700,fontSize:13,color:"#374151",marginBottom:10}}>📋 Formato esperado</div>
+            <div style={{fontFamily:"monospace",fontSize:12,color:"#475569",lineHeight:1.8,background:"#fff",borderRadius:8,padding:"10px 14px",border:"1px solid #e2e8f0"}}>
+              <div style={{color:"#94a3b8",marginBottom:4}}>conta ; volume_aplicado ; net_em_m ; segmento ; status</div>
+              <div>2277088 ; 120000 ; 4141294 ; Express ; ATIVO</div>
+              <div>520488 ; 95000 ; -2393007 ; Express ; ATIVO</div>
+            </div>
+            <div style={{marginTop:10,fontSize:12,color:"#64748b"}}>
+              ✅ Aceita <strong>CSV ou texto colado</strong><br/>
+              ✅ Separadores: <strong>ponto-e-vírgula, vírgula ou tab</strong><br/>
+              ✅ Colunas <strong>segmento</strong> e <strong>status</strong> são opcionais
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:4}}>Segmento padrão</label>
+              <select value={segPadrao} onChange={e=>setSegPadrao(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,outline:"none"}}>
+                {segmentosOpcoes.map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:4}}>Status padrão</label>
+              <select value={statusPadrao} onChange={e=>setStatusPadrao(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,outline:"none"}}>
+                <option>ATIVO</option><option>INATIVO</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+            <button onClick={baixarModelo} style={{background:"#f0fdf4",border:"2px dashed #86efac",borderRadius:12,padding:"16px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+              <span style={{fontSize:22}}>⬇️</span>
+              <span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>Baixar Modelo</span>
+              <span style={{fontSize:10,color:"#94a3b8"}}>CSV pronto p/ preencher</span>
+            </button>
+            <label style={{background:"#eff6ff",border:"2px dashed #bfdbfe",borderRadius:12,padding:"16px 10px",textAlign:"center",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+              <span style={{fontSize:22}}>📁</span>
+              <span style={{fontSize:12,fontWeight:700,color:"#2563eb"}}>Enviar arquivo</span>
+              <span style={{fontSize:10,color:"#94a3b8"}}>CSV, TXT</span>
+              <input type="file" accept=".csv,.txt" onChange={handleFile} style={{display:"none"}}/>
+            </label>
+            <button onClick={()=>setModo("colar")} style={{background:"#f8fafc",border:"2px dashed #e2e8f0",borderRadius:12,padding:"16px 10px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+              <span style={{fontSize:22}}>📋</span>
+              <span style={{fontSize:12,fontWeight:700,color:"#374151"}}>Colar dados</span>
+              <span style={{fontSize:10,color:"#94a3b8"}}>Cole do Excel direto</span>
+            </button>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end"}}>
+            <button onClick={onCancelar} style={{padding:"9px 20px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",color:"#64748b"}}>Cancelar</button>
+          </div>
+        </>
+      )}
+      {modo==="colar" && (
+        <>
+          <div style={{marginBottom:12}}>
+            <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:6}}>Cole os dados abaixo:</label>
+            <textarea value={textoCSV} onChange={e=>setTextoCSV(e.target.value)}
+              placeholder={"2277088;120000;4141294;Express;ATIVO\n520488;95000;-2393007;Express;ATIVO"}
+              style={{width:"100%",height:160,padding:"12px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:13,fontFamily:"monospace",resize:"vertical",boxSizing:"border-box",outline:"none",lineHeight:1.6}}/>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Você pode copiar células diretamente do Excel (Ctrl+C) e colar aqui</div>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+            <button onClick={()=>setModo("instrucoes")} style={{padding:"9px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",color:"#64748b"}}>Voltar</button>
+            <button onClick={processar} disabled={!textoCSV.trim()} style={{padding:"9px 20px",borderRadius:10,border:"none",background:textoCSV.trim()?"#0f172a":"#e2e8f0",color:textoCSV.trim()?"#fff":"#94a3b8",fontSize:13,fontWeight:700,cursor:textoCSV.trim()?"pointer":"not-allowed"}}>
+              Processar →
+            </button>
+          </div>
+        </>
+      )}
+      {modo==="preview" && (
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+            {[
+              {label:"Clientes",       value:preview.length,      color:"#0f172a"},
+              {label:"Vol. Total",     value:fBRL(totalVol,true), color:"#2563eb"},
+              {label:"Ganho Assessor", value:fBRL(ganhoTotal),    color:"#16a34a"},
+            ].map(k=>(
+              <div key={k.label} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",textAlign:"center"}}>
+                <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase"}}>{k.label}</div>
+                <div style={{fontSize:16,fontWeight:800,color:k.color,marginTop:2}}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+          {erros.length>0 && (
+            <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#c2410c",marginBottom:4}}>⚠️ {erros.length} linha{erros.length!==1?"s":""} ignorada{erros.length!==1?"s":""}:</div>
+              {erros.map((e,i)=><div key={i} style={{fontSize:11,color:"#9a3412"}}>{e}</div>)}
+            </div>
+          )}
+          <div style={{maxHeight:220,overflowY:"auto",border:"1px solid #f0f0f0",borderRadius:10,marginBottom:14}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+              <thead style={{position:"sticky",top:0,background:"#f8fafc"}}>
+                <tr>
+                  {["Conta","Volume","Segmento","Status","Ganho"].map(h=>(
+                    <th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:"#64748b",fontSize:10,textTransform:"uppercase",borderBottom:"1px solid #f0f0f0"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((c,i)=>(
+                  <tr key={i} style={{borderBottom:i<preview.length-1?"1px solid #f8fafc":"none"}}>
+                    <td style={{padding:"8px 12px",fontWeight:700}}>{c.conta}</td>
+                    <td style={{padding:"8px 12px"}}>{fBRL(c.volumeAplicado,true)}</td>
+                    <td style={{padding:"8px 12px"}}><span style={{background:"#eff6ff",color:"#2563eb",padding:"2px 7px",borderRadius:4,fontSize:10,fontWeight:600}}>{c.segmento}</span></td>
+                    <td style={{padding:"8px 12px"}}><span style={{color:c.status==="ATIVO"?"#16a34a":"#94a3b8",fontWeight:600,fontSize:11}}>{c.status}</span></td>
+                    <td style={{padding:"8px 12px",fontWeight:700,color:"#16a34a"}}>{fBRL(c.volumeAplicado*(parseFloat(ofertaAtual?.roaAssessor)||0)/100)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{display:"flex",gap:10,justifyContent:"space-between"}}>
+            <button onClick={()=>setModo("colar")} style={{padding:"9px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",color:"#64748b"}}>← Editar</button>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={onCancelar} style={{padding:"9px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",color:"#64748b"}}>Cancelar</button>
+              <button onClick={()=>onImportar(preview)} disabled={preview.length===0}
+                style={{padding:"9px 22px",borderRadius:10,border:"none",background:preview.length>0?"#16a34a":"#e2e8f0",color:preview.length>0?"#fff":"#94a3b8",fontSize:13,fontWeight:700,cursor:preview.length>0?"pointer":"not-allowed"}}>
+                ✅ Importar {preview.length} cliente{preview.length!==1?"s":""}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── DASHBOARD PRINCIPAL ───────────────────────────────────────────────────────
+function Dashboard({ assessor, onLogout, onGerenciar }) {
+  const LS_OFERTAS  = lsKey(assessor.codigo, "ofertas");
+  const LS_CLIENTES = lsKey(assessor.codigo, "clientes");
+
+  const [tab, setTab] = useState("ofertas");
+  const [ofertas, setOfertas] = useState(() => lsGet(LS_OFERTAS, ofertasIniciais));
+  const [showOfertaModal, setShowOfertaModal] = useState(false);
+  const [editOferta, setEditOferta] = useState(null);
+  const [formOferta, setFormOferta] = useState({ produto:"", tipo:"Fundos", roa:"", roaAssessor:"", volumeAlvo:"", prazo:"", clientesForm:[] });
+  const tiposOferta = ["RF Bancários","RF Públicos","RF Privados","Fundos","FII","Previdência","Renda Variável","Outros"];
+
+  const [clientesPorOferta, setClientesPorOferta] = useState(() => {
+    const saved = lsGet(LS_CLIENTES, null);
+    if (saved) {
+      const converted = {};
+      Object.keys(saved).forEach(k => { converted[isNaN(k)?k:Number(k)] = saved[k]; });
+      return converted;
+    }
+    return clientesOfertaInicial;
+  });
+
+  // Auto-save sempre que mudar
+  useEffect(() => { lsSet(LS_OFERTAS, ofertas); }, [ofertas]);
+  useEffect(() => { lsSet(LS_CLIENTES, clientesPorOferta); }, [clientesPorOferta]);
+
+  const resetarDados = () => {
+    if (!window.confirm("Tem certeza que deseja apagar todos os dados e voltar ao estado inicial?")) return;
+    lsDel(LS_OFERTAS); lsDel(LS_CLIENTES);
+    setOfertas(ofertasIniciais);
+    setClientesPorOferta(clientesOfertaInicial);
+  };
+
+  const abrirNovaOferta = () => { setEditOferta(null); setFormOferta({ produto:"",tipo:"Fundos",roa:"",roaAssessor:"",volumeAlvo:"",prazo:"",clientesForm:[] }); setShowOfertaModal(true); };
+  const abrirEditOferta = (o) => { setEditOferta({...o}); setShowOfertaModal(true); };
+  const salvarOferta = () => {
+    if (editOferta) {
+      const roa = parseFloat(String(editOferta.roa).replace(",",".")) || 0;
+      const roaAssessor = parseFloat(String(editOferta.roaAssessor).replace(",",".")) || 0;
+      const volumeAlvo = parseFloat(String(editOferta.volumeAlvo).replace(",",".")) || 0;
+      setOfertas(ofertas.map(o => o.id===editOferta.id ? {...editOferta, roa, roaAssessor, volumeAlvo} : o));
+    } else {
+      const novoId = Date.now();
+      const roa = parseFloat(String(formOferta.roa).replace(",",".")) || 0;
+      const roaAssessor = parseFloat(String(formOferta.roaAssessor).replace(",",".")) || 0;
+      const volumeAlvo = parseFloat(String(formOferta.volumeAlvo).replace(",",".")) || 0;
+      const nova = {...formOferta, id:novoId, roa, roaAssessor, volumeAlvo};
+      setOfertas(prev=>[...prev, nova]);
+      if (formOferta.clientesForm && formOferta.clientesForm.length>0) {
+        setClientesPorOferta(prev=>({...prev,[novoId]:formOferta.clientesForm}));
+      }
+    }
+    setShowOfertaModal(false);
+  };
+  const excluirOferta = (id) => setOfertas(ofertas.filter(o=>o.id!==id));
+  const ganhoOferta = (o) => (parseFloat(o.volumeAlvo)||0) * (parseFloat(o.roaAssessor)||0) / 100;
+  const ganhoAssessorCliente = (vol, roaA) => (parseFloat(vol)||0) * (parseFloat(roaA)||0) / 100;
+  const totalGanhoOfertas = ofertas.reduce((a,o)=>a+ganhoOferta(o),0);
+  const totalVolumeOfertas = ofertas.reduce((a,o)=>a+(parseFloat(o.volumeAlvo)||0),0);
+
+  const [ofertaSelecionada, setOfertaSelecionada] = useState(1);
+  const [filtroStatus, setFiltroStatus] = useState("TODOS");
+  const [busca, setBusca] = useState("");
+  const [showClienteModal, setShowClienteModal] = useState(false);
+  const [formCliente, setFormCliente] = useState({ conta:"", segmento:"Express", status:"ATIVO", volumeAplicado:"", net:"" });
+  const segmentosOpcoes = ["Express","Não Disponível","Plus","Private","Unique"];
+
+  const ofertaAtual = ofertas.find(o=>o.id===ofertaSelecionada);
+  const listaClientes = clientesPorOferta[ofertaSelecionada] || [];
+  const listaFiltrada = listaClientes
+    .filter(c => filtroStatus==="TODOS" || c.status===filtroStatus)
+    .filter(c => busca==="" || c.conta.includes(busca));
+  const totalVolClientes = listaClientes.reduce((a,c)=>a+c.volumeAplicado,0);
+  const ganhoTotalClientes = ofertaAtual ? ganhoAssessorCliente(totalVolClientes, ofertaAtual.roaAssessor) : 0;
+
+  const adicionarCliente = () => {
+    const novo = {...formCliente, volumeAplicado:Number(formCliente.volumeAplicado), net:Number(formCliente.net)};
+    setClientesPorOferta(prev=>({...prev,[ofertaSelecionada]:[...(prev[ofertaSelecionada]||[]),novo]}));
+    setFormCliente({ conta:"", segmento:"Express", status:"ATIVO", volumeAplicado:"", net:"" });
+    setShowClienteModal(false);
+  };
+  const removerCliente = (conta) => {
+    setClientesPorOferta(prev=>({...prev,[ofertaSelecionada]:prev[ofertaSelecionada].filter(c=>c.conta!==conta)}));
+  };
+
+  return (
+    <div style={{fontFamily:"'Lato','Segoe UI',sans-serif",background:"#f8fafc",minHeight:"100vh"}}>
+
+      {/* ── HEADER ── */}
+      <div style={{background:"#fff",borderBottom:"1px solid #e2e8f0",padding:"0 32px",position:"sticky",top:0,zIndex:50}}>
+        <div style={{maxWidth:1280,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",height:62}}>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:34,height:34,background:"#0f172a",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{color:"#fff",fontSize:17}}>🎯</span>
+            </div>
+            <div>
+              <div style={{fontSize:16,fontWeight:800,letterSpacing:"-0.02em",color:"#0f172a"}}>Campanha do Mês</div>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:-1}}>👤 {assessor.nome} · Cód. {assessor.codigo}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:2,background:"#f1f5f9",borderRadius:10,padding:3}}>
+            {[{key:"ofertas",label:"Ofertas"},{key:"clientesoferta",label:"Clientes por Oferta"}].map(t=>(
+              <button key={t.key} onClick={()=>setTab(t.key)}
+                style={{padding:"7px 18px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontWeight:600,
+                  background:tab===t.key?"#fff":"transparent",
+                  color:tab===t.key?"#0f172a":"#64748b",
+                  boxShadow:tab===t.key?"0 1px 3px rgba(0,0,0,0.1)":"none",
+                  transition:"all 0.15s"}}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={resetarDados}
+              title="Apagar todos os dados"
+              style={{background:"#fff",border:"1px solid #fee2e2",borderRadius:8,padding:"6px 12px",fontSize:11,fontWeight:700,color:"#dc2626",cursor:"pointer"}}>
+              🗑 Resetar
+            </button>
+            {onGerenciar && (
+              <button onClick={onGerenciar}
+                style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 14px",fontSize:11,fontWeight:700,color:"#2563eb",cursor:"pointer"}}>
+                👥 Assessores
+              </button>
+            )}
+            <button onClick={onLogout}
+              style={{background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"6px 14px",fontSize:11,fontWeight:700,color:"#64748b",cursor:"pointer"}}>
+              Sair →
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{maxWidth:1280,margin:"0 auto",padding:"26px 32px"}}>
+
+        {/* ══ ABA OFERTAS ══════════════════════════════════════════════ */}
+        {tab==="ofertas" && (
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}>
+              <div>
+                <h2 style={{fontSize:22,fontWeight:800,letterSpacing:"-0.025em",margin:0}}>Ofertas</h2>
+                <p style={{color:"#94a3b8",fontSize:13,marginTop:4}}>Selecione um produto para ver os clientes vinculados</p>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setShowClienteModal(true)} disabled={!ofertaSelecionada}
+                  style={{background:ofertaSelecionada?"#eff6ff":"#f1f5f9",color:ofertaSelecionada?"#2563eb":"#94a3b8",border:`1px solid ${ofertaSelecionada?"#bfdbfe":"#e2e8f0"}`,borderRadius:10,padding:"9px 18px",fontWeight:700,fontSize:13,cursor:ofertaSelecionada?"pointer":"not-allowed"}}>
+                  + Vincular Cliente
+                </button>
+                <button onClick={abrirNovaOferta} style={{background:"#0f172a",color:"#fff",border:"none",borderRadius:10,padding:"9px 20px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                  + Nova Oferta
+                </button>
+              </div>
+            </div>
+
+            {/* KPIs */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:13,marginBottom:20}}>
+              <KpiCard label="Ganho Assessor Total" value={fBRL(totalGanhoOfertas)} sub="Soma do ROA assessor" subColor="#16a34a" icon="🎯" border="#dcfce7"/>
+              <KpiCard label="Volume Total Ofertado" value={fBRL(totalVolumeOfertas,true)} sub={`${ofertas.length} produto${ofertas.length!==1?"s":""} cadastrado${ofertas.length!==1?"s":""}`} icon="📦"/>
+              <KpiCard label="ROA Produto Médio" value={`${(ofertas.reduce((a,o)=>a+(parseFloat(o.roa)||0),0)/Math.max(ofertas.length,1)).toFixed(2)}%`} sub="Média dos produtos" icon="📊"/>
+              <KpiCard label="ROA Assessor Médio" value={`${(ofertas.reduce((a,o)=>a+(parseFloat(o.roaAssessor)||0),0)/Math.max(ofertas.length,1)).toFixed(2)}%`} sub="Média do assessor" icon="👤" border="#eff6ff"/>
+            </div>
+
+            {/* Grid: cards esquerda | clientes direita */}
+            <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:16,alignItems:"start"}}>
+
+              {/* Cards de produtos */}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {ofertas.map(o=>{
+                  const sel = ofertaSelecionada===o.id;
+                  const qtdCli = (clientesPorOferta[o.id]||[]).length;
+                  const volCli = (clientesPorOferta[o.id]||[]).reduce((a,c)=>a+c.volumeAplicado,0);
+                  const pctMeta = o.volumeAlvo>0?Math.min((volCli/o.volumeAlvo)*100,100):0;
+                  return (
+                    <div key={o.id} onClick={()=>setOfertaSelecionada(o.id)}
+                      style={{background:sel?"#0f172a":"#fff",borderRadius:14,padding:"16px 18px",border:`2px solid ${sel?"#0f172a":"#f0f0f0"}`,cursor:"pointer",transition:"all 0.15s",boxShadow:sel?"0 4px 20px rgba(15,23,42,0.15)":"none"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                        <div style={{flex:1,paddingRight:8}}>
+                          <div style={{fontSize:13,fontWeight:800,color:sel?"#fff":"#0f172a",lineHeight:1.3}}>{o.produto}</div>
+                          <div style={{fontSize:11,color:sel?"#94a3b8":"#64748b",marginTop:3}}>{o.tipo} · {o.prazo||"—"}</div>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+                          <span style={{background:sel?"rgba(255,255,255,0.12)":"#f1f5f9",color:sel?"#cbd5e1":"#64748b",padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,whiteSpace:"nowrap"}}>
+                            Produto {(parseFloat(o.roa)||0).toFixed(2)}%
+                          </span>
+                          <span style={{background:sel?"rgba(74,222,128,0.2)":"#eff6ff",color:sel?"#4ade80":"#2563eb",padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:800,whiteSpace:"nowrap"}}>
+                            👤 {(parseFloat(o.roaAssessor)||0).toFixed(2)}%
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{background:sel?"rgba(255,255,255,0.1)":"#f1f5f9",borderRadius:4,height:5,overflow:"hidden",marginBottom:8}}>
+                        <div style={{width:`${pctMeta}%`,background:sel?"#60a5fa":pctMeta>=100?"#16a34a":"#2563eb",height:"100%",borderRadius:4}}/>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div style={{fontSize:11,color:sel?"#94a3b8":"#64748b"}}>
+                          <span style={{fontWeight:700,color:sel?"#60a5fa":"#2563eb"}}>{qtdCli}</span> cliente{qtdCli!==1?"s":""}
+                        </div>
+                        <div style={{fontSize:11,fontWeight:700,color:sel?"#4ade80":"#16a34a"}}>{fBRL(ganhoOferta(o))}</div>
+                      </div>
+                      {sel && (
+                        <div style={{display:"flex",gap:6,marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+                          <button onClick={e=>{e.stopPropagation();abrirEditOferta(o);}}
+                            style={{flex:1,background:"rgba(255,255,255,0.1)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:7,padding:"5px 0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                            ✏️ Editar
+                          </button>
+                          <button onClick={e=>{e.stopPropagation();excluirOferta(o.id);if(ofertaSelecionada===o.id)setOfertaSelecionada(ofertas.find(x=>x.id!==o.id)?.id||null);}}
+                            style={{flex:1,background:"rgba(220,38,38,0.2)",color:"#fca5a5",border:"1px solid rgba(220,38,38,0.3)",borderRadius:7,padding:"5px 0",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                            🗑 Excluir
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {ofertas.length===0 && (
+                  <div style={{background:"#f8fafc",borderRadius:14,padding:"30px",textAlign:"center",color:"#94a3b8",fontSize:13,border:"1px dashed #e2e8f0"}}>
+                    Nenhuma oferta cadastrada.<br/>Clique em "+ Nova Oferta".
+                  </div>
+                )}
+              </div>
+
+              {/* Painel direito: clientes da oferta selecionada */}
+              <div>
+                {!ofertaAtual ? (
+                  <div style={{background:"#f8fafc",borderRadius:16,padding:"60px 24px",textAlign:"center",border:"1px dashed #e2e8f0"}}>
+                    <div style={{fontSize:32,marginBottom:12}}>👈</div>
+                    <div style={{fontWeight:700,color:"#374151",fontSize:15}}>Selecione uma oferta</div>
+                    <div style={{color:"#94a3b8",fontSize:13,marginTop:4}}>Clique em um produto para ver os clientes vinculados</div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{background:"#fff",borderRadius:14,padding:"18px 20px",border:"1px solid #f0f0f0",marginBottom:14}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                        <div>
+                          <div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>{ofertaAtual.produto}</div>
+                          <div style={{fontSize:12,color:"#64748b",marginTop:2,display:"flex",gap:10,flexWrap:"wrap"}}>
+                            <span>{ofertaAtual.tipo} · Prazo: {ofertaAtual.prazo||"—"}</span>
+                            <span>ROA Produto: <strong style={{color:"#64748b"}}>{(parseFloat(ofertaAtual.roa)||0).toFixed(2)}%</strong></span>
+                            <span style={{color:"#2563eb",fontWeight:700}}>ROA Assessor: <strong>{(parseFloat(ofertaAtual.roaAssessor)||0).toFixed(2)}%</strong></span>
+                          </div>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                          <span style={{background:"#dcfce7",color:"#16a34a",padding:"5px 14px",borderRadius:10,fontSize:14,fontWeight:800}}>{fBRL(ganhoTotalClientes)}</span>
+                          <span style={{fontSize:10,color:"#94a3b8"}}>ganho do assessor</span>
+                        </div>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                        {[
+                          {label:"Clientes",     value:listaClientes.length,                                                           sub:`${listaClientes.filter(c=>c.status==="ATIVO").length} ativos`},
+                          {label:"Vol. Aplicado",value:fBRL(totalVolClientes,true),                                                    sub:`Meta: ${fBRL(ofertaAtual.volumeAlvo,true)}`},
+                          {label:"Meta",         value:`${Math.min((totalVolClientes/ofertaAtual.volumeAlvo)*100,999).toFixed(1)}%`,   sub:totalVolClientes>=ofertaAtual.volumeAlvo?"✅ Atingida":"Em progresso"},
+                        ].map(k=>(
+                          <div key={k.label} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px"}}>
+                            <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em"}}>{k.label}</div>
+                            <div style={{fontSize:17,fontWeight:800,color:"#0f172a",marginTop:2}}>{k.value}</div>
+                            <div style={{fontSize:11,color:"#64748b"}}>{k.sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{marginTop:12}}>
+                        <div style={{background:"#f1f5f9",borderRadius:6,height:10,overflow:"hidden"}}>
+                          <div style={{width:`${Math.min((totalVolClientes/ofertaAtual.volumeAlvo)*100,100)}%`,background:totalVolClientes>=ofertaAtual.volumeAlvo?"#16a34a":"#2563eb",height:"100%",borderRadius:6,transition:"width 0.5s"}}/>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+                      <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por conta..."
+                        style={{padding:"7px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,outline:"none",width:170}}/>
+                      {["TODOS","ATIVO","INATIVO"].map(f=>(
+                        <button key={f} onClick={()=>setFiltroStatus(f)}
+                          style={{padding:"6px 12px",borderRadius:7,border:"1px solid",borderColor:filtroStatus===f?"#0f172a":"#e2e8f0",background:filtroStatus===f?"#0f172a":"#fff",color:filtroStatus===f?"#fff":"#64748b",fontSize:11,fontWeight:700,cursor:"pointer"}}>{f}</button>
+                      ))}
+                      <span style={{fontSize:11,color:"#94a3b8",marginLeft:2}}>{listaFiltrada.length} cliente{listaFiltrada.length!==1?"s":""}</span>
+                    </div>
+
+                    <div style={{background:"#fff",borderRadius:14,border:"1px solid #f0f0f0",overflow:"hidden"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse"}}>
+                        <thead>
+                          <tr style={{background:"#f8fafc",borderBottom:"1px solid #f0f0f0"}}>
+                            {["Conta","Segmento","Status","Volume Aplicado","Ganho Assessor","Net em M",""].map(h=>(
+                              <th key={h} style={{padding:"11px 16px",textAlign:"left",fontSize:10,fontWeight:700,color:"#64748b",letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {listaFiltrada.length===0 && (
+                            <tr><td colSpan={7} style={{padding:"36px",textAlign:"center",color:"#94a3b8",fontSize:13}}>
+                              Nenhum cliente vinculado. Clique em "+ Vincular Cliente".
+                            </td></tr>
+                          )}
+                          {listaFiltrada.map((c,i)=>{
+                            const ganho = ganhoAssessorCliente(c.volumeAplicado, ofertaAtual.roaAssessor);
+                            const pct = totalVolClientes>0?(c.volumeAplicado/totalVolClientes)*100:0;
+                            return (
+                              <tr key={c.conta} style={{borderBottom:i<listaFiltrada.length-1?"1px solid #f8fafc":"none"}}
+                                onMouseEnter={e=>e.currentTarget.style.background="#fafbfc"}
+                                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                                <td style={{padding:"12px 16px",fontWeight:700,fontSize:13}}>{c.conta}</td>
+                                <td style={{padding:"12px 16px"}}>
+                                  <span style={{background:"#eff6ff",color:"#2563eb",padding:"2px 8px",borderRadius:5,fontSize:11,fontWeight:600}}>{c.segmento}</span>
+                                </td>
+                                <td style={{padding:"12px 16px"}}><StatusBadge s={c.status}/></td>
+                                <td style={{padding:"12px 16px"}}>
+                                  <div style={{fontSize:13,fontWeight:700}}>{fBRL(c.volumeAplicado,true)}</div>
+                                  <div style={{display:"flex",alignItems:"center",gap:5,marginTop:3}}>
+                                    <div style={{width:60,background:"#f1f5f9",borderRadius:3,height:4,overflow:"hidden"}}>
+                                      <div style={{width:`${pct}%`,background:"#2563eb",height:"100%",borderRadius:3}}/>
+                                    </div>
+                                    <span style={{fontSize:10,color:"#94a3b8"}}>{pct.toFixed(1)}%</span>
+                                  </div>
+                                </td>
+                                <td style={{padding:"12px 16px",fontSize:13,fontWeight:800,color:"#16a34a"}}>{fBRL(ganho)}</td>
+                                <td style={{padding:"12px 16px",fontSize:12,fontWeight:600,color:c.net<0?"#dc2626":"#374151"}}>{fBRL(c.net,true)}</td>
+                                <td style={{padding:"12px 16px"}}>
+                                  <button onClick={()=>removerCliente(c.conta)}
+                                    style={{background:"none",border:"1px solid #fee2e2",borderRadius:6,padding:"4px 9px",fontSize:11,cursor:"pointer",color:"#dc2626",fontWeight:700}}>✕</button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        {listaFiltrada.length>0 && (
+                          <tfoot>
+                            <tr style={{background:"#f8fafc",borderTop:"2px solid #e2e8f0"}}>
+                              <td colSpan={3} style={{padding:"12px 16px",fontWeight:800,fontSize:13}}>Total</td>
+                              <td style={{padding:"12px 16px",fontWeight:800,fontSize:13}}>{fBRL(totalVolClientes,true)}</td>
+                              <td style={{padding:"12px 16px",fontWeight:800,fontSize:13,color:"#16a34a"}}>{fBRL(ganhoTotalClientes)}</td>
+                              <td colSpan={2}/>
+                            </tr>
+                          </tfoot>
+                        )}
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ══ ABA CLIENTES POR OFERTA ══════════════════════════════════ */}
+        {tab==="clientesoferta" && (
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}>
+              <div>
+                <h2 style={{fontSize:22,fontWeight:800,letterSpacing:"-0.025em",margin:0}}>Clientes por Oferta</h2>
+                <p style={{color:"#94a3b8",fontSize:13,marginTop:4}}>Veja quais clientes estão alocados em cada produto</p>
+              </div>
+              <button onClick={()=>setShowClienteModal(true)} style={{background:"#0f172a",color:"#fff",border:"none",borderRadius:10,padding:"9px 20px",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                + Vincular Cliente
+              </button>
+            </div>
+
+            <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}>
+              {ofertas.map(o=>(
+                <button key={o.id} onClick={()=>{setOfertaSelecionada(o.id);setFiltroStatus("TODOS");setBusca("");}}
+                  style={{padding:"10px 18px",borderRadius:12,border:"2px solid",borderColor:ofertaSelecionada===o.id?"#2563eb":"#e2e8f0",background:ofertaSelecionada===o.id?"#eff6ff":"#fff",color:ofertaSelecionada===o.id?"#2563eb":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s",display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2}}>
+                  <span>{o.produto}</span>
+                  <span style={{fontSize:11,fontWeight:500,color:ofertaSelecionada===o.id?"#93c5fd":"#94a3b8"}}>{o.tipo} · ROA Assessor {(parseFloat(o.roaAssessor)||0).toFixed(2)}%</span>
+                </button>
+              ))}
+            </div>
+
+            {ofertaAtual && (
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:13,marginBottom:20}}>
+                <KpiCard label="Clientes Vinculados" value={listaClientes.length} sub={`Ativos: ${listaClientes.filter(c=>c.status==="ATIVO").length}`} icon="👥"/>
+                <KpiCard label="Volume Total Aplicado" value={fBRL(totalVolClientes,true)} sub={`Meta: ${fBRL(ofertaAtual.volumeAlvo,true)}`} subColor={totalVolClientes>=ofertaAtual.volumeAlvo?"#16a34a":"#f59e0b"} icon="📦"/>
+                <KpiCard label="Atingimento da Meta" value={`${Math.min((totalVolClientes/ofertaAtual.volumeAlvo)*100,999).toFixed(1)}%`} sub={totalVolClientes>=ofertaAtual.volumeAlvo?"Meta atingida ✅":"Em progresso"} subColor={totalVolClientes>=ofertaAtual.volumeAlvo?"#16a34a":"#f59e0b"} icon="🎯" border={totalVolClientes>=ofertaAtual.volumeAlvo?"#dcfce7":"#fef9c3"}/>
+                <KpiCard label="Ganho Assessor" value={fBRL(ganhoTotalClientes)} sub={`ROA Assessor ${(parseFloat(ofertaAtual.roaAssessor)||0).toFixed(2)}%`} subColor="#16a34a" icon="💰" border="#dcfce7"/>
+              </div>
+            )}
+
+            {ofertaAtual && (
+              <div style={{background:"#fff",borderRadius:14,padding:"16px 22px",border:"1px solid #f0f0f0",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>Progresso da Meta de Volume</span>
+                  <span style={{fontSize:13,color:"#64748b"}}>{fBRL(totalVolClientes,true)} <span style={{color:"#94a3b8"}}>/ {fBRL(ofertaAtual.volumeAlvo,true)}</span></span>
+                </div>
+                <div style={{background:"#f1f5f9",borderRadius:8,height:14,overflow:"hidden"}}>
+                  <div style={{width:`${Math.min((totalVolClientes/ofertaAtual.volumeAlvo)*100,100)}%`,background:totalVolClientes>=ofertaAtual.volumeAlvo?"#16a34a":"#2563eb",height:"100%",borderRadius:8,transition:"width 0.5s"}}/>
+                </div>
+              </div>
+            )}
+
+            <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
+              <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="Buscar por conta..." style={{padding:"8px 14px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:13,outline:"none",width:200}}/>
+              {["TODOS","ATIVO","INATIVO"].map(f=>(
+                <button key={f} onClick={()=>setFiltroStatus(f)} style={{padding:"7px 14px",borderRadius:8,border:"1px solid",borderColor:filtroStatus===f?"#0f172a":"#e2e8f0",background:filtroStatus===f?"#0f172a":"#fff",color:filtroStatus===f?"#fff":"#64748b",fontSize:12,fontWeight:600,cursor:"pointer"}}>{f}</button>
+              ))}
+              <span style={{fontSize:12,color:"#94a3b8",marginLeft:4}}>{listaFiltrada.length} cliente{listaFiltrada.length!==1?"s":""}</span>
+            </div>
+
+            <div style={{background:"#fff",borderRadius:16,border:"1px solid #f0f0f0",overflow:"hidden"}}>
+              <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead>
+                  <tr style={{background:"#f8fafc",borderBottom:"1px solid #f0f0f0"}}>
+                    {["Conta","Segmento","Status","Volume Aplicado","Ganho Assessor","Net em M","Ações"].map(h=>(
+                      <th key={h} style={{padding:"12px 18px",textAlign:"left",fontSize:11,fontWeight:700,color:"#64748b",letterSpacing:"0.06em",textTransform:"uppercase"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {listaFiltrada.length===0 && (
+                    <tr><td colSpan={7} style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:14}}>Nenhum cliente encontrado para esta oferta.</td></tr>
+                  )}
+                  {listaFiltrada.map((c,i)=>{
+                    const ganho = ofertaAtual ? ganhoAssessorCliente(c.volumeAplicado, ofertaAtual.roaAssessor) : 0;
+                    return (
+                      <tr key={c.conta} style={{borderBottom:i<listaFiltrada.length-1?"1px solid #f8fafc":"none"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#fafbfc"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <td style={{padding:"13px 18px",fontWeight:700,fontSize:14}}>{c.conta}</td>
+                        <td style={{padding:"13px 18px"}}><span style={{background:"#f1f5f9",color:"#374151",padding:"3px 9px",borderRadius:6,fontSize:12,fontWeight:600}}>{c.segmento}</span></td>
+                        <td style={{padding:"13px 18px"}}><StatusBadge s={c.status}/></td>
+                        <td style={{padding:"13px 18px",fontSize:14,fontWeight:700}}>{fBRL(c.volumeAplicado,true)}</td>
+                        <td style={{padding:"13px 18px",fontSize:14,fontWeight:800,color:"#16a34a"}}>{fBRL(ganho)}</td>
+                        <td style={{padding:"13px 18px",fontSize:13,fontWeight:600,color:c.net<0?"#dc2626":"#374151"}}>{fBRL(c.net,true)}</td>
+                        <td style={{padding:"13px 18px"}}>
+                          <button onClick={()=>removerCliente(c.conta)} style={{background:"none",border:"1px solid #fee2e2",borderRadius:7,padding:"5px 11px",fontSize:12,cursor:"pointer",color:"#dc2626",fontWeight:600}}>✕ Remover</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {listaFiltrada.length>0 && ofertaAtual && (
+                  <tfoot>
+                    <tr style={{background:"#f8fafc",borderTop:"2px solid #e2e8f0"}}>
+                      <td colSpan={3} style={{padding:"13px 18px",fontWeight:800,fontSize:14}}>Total</td>
+                      <td style={{padding:"13px 18px",fontWeight:800,fontSize:14}}>{fBRL(totalVolClientes,true)}</td>
+                      <td style={{padding:"13px 18px",fontWeight:800,fontSize:14,color:"#16a34a"}}>{fBRL(ganhoTotalClientes)}</td>
+                      <td colSpan={2} style={{padding:"13px 18px",fontSize:12,color:"#94a3b8"}}>{listaClientes.length} cliente{listaClientes.length!==1?"s":""} nesta oferta</td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ══ MODAL VINCULAR CLIENTE ═══════════════════════════════════════ */}
+      {showClienteModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:"24px 0",overflowY:"auto"}}>
+          <div style={{background:"#fff",borderRadius:20,width:560,boxShadow:"0 20px 60px rgba(0,0,0,0.18)",margin:"auto",overflow:"hidden"}}>
+            <div style={{padding:"24px 32px 0"}}>
+              <h2 style={{margin:"0 0 4px",fontSize:18,fontWeight:800}}>Vincular Clientes</h2>
+              <p style={{margin:"0 0 20px",fontSize:13,color:"#94a3b8"}}>Oferta: <strong style={{color:"#2563eb"}}>{ofertaAtual?.produto}</strong></p>
+              <div style={{display:"flex",gap:0,borderBottom:"2px solid #f0f0f0"}}>
+                {[{key:"individual",label:"➕ Individual"},{key:"lote",label:"📂 Upload em Lote"}].map(t=>(
+                  <button key={t.key}
+                    onClick={()=>setFormCliente(f=>({...f,_modoVinculo:t.key}))}
+                    style={{padding:"10px 22px",border:"none",background:"transparent",fontSize:13,fontWeight:700,cursor:"pointer",
+                      color:(formCliente._modoVinculo||"individual")===t.key?"#0f172a":"#94a3b8",
+                      borderBottom:(formCliente._modoVinculo||"individual")===t.key?"2px solid #0f172a":"2px solid transparent",
+                      marginBottom:-2}}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{padding:"22px 32px 28px"}}>
+              {(formCliente._modoVinculo||"individual")==="individual" && (
+                <>
+                  <div style={{marginBottom:14}}>
+                    <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Número da Conta</label>
+                    <input type="text" placeholder="Ex: 2277088" value={formCliente.conta}
+                      onChange={e=>setFormCliente({...formCliente,conta:e.target.value})}
+                      style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+                    <div>
+                      <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Segmento</label>
+                      <select value={formCliente.segmento} onChange={e=>setFormCliente({...formCliente,segmento:e.target.value})}
+                        style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,outline:"none"}}>
+                        {segmentosOpcoes.map(s=><option key={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Status</label>
+                      <select value={formCliente.status} onChange={e=>setFormCliente({...formCliente,status:e.target.value})}
+                        style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,outline:"none"}}>
+                        <option>ATIVO</option><option>INATIVO</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                    <div>
+                      <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Volume Aplicado (R$)</label>
+                      <input type="number" min="0" placeholder="Ex: 50000" value={formCliente.volumeAplicado}
+                        onChange={e=>setFormCliente({...formCliente,volumeAplicado:e.target.value})}
+                        style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+                    </div>
+                    <div>
+                      <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Net em M (R$)</label>
+                      <input type="number" placeholder="Ex: 1500000" value={formCliente.net}
+                        onChange={e=>setFormCliente({...formCliente,net:e.target.value})}
+                        style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+                    </div>
+                  </div>
+                  {Number(formCliente.volumeAplicado)>0 && ofertaAtual && (
+                    <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"11px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:13,color:"#15803d",fontWeight:600}}>👤 Ganho assessor neste cliente:</span>
+                      <span style={{fontSize:16,fontWeight:800,color:"#16a34a"}}>{fBRL((Number(formCliente.volumeAplicado)*(parseFloat(ofertaAtual.roaAssessor)||0))/100)}</span>
+                    </div>
+                  )}
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setShowClienteModal(false)} style={{padding:"10px 20px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",color:"#64748b"}}>Cancelar</button>
+                    <button onClick={adicionarCliente} style={{padding:"10px 22px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Vincular</button>
+                  </div>
+                </>
+              )}
+              {(formCliente._modoVinculo)==="lote" && (
+                <LoteUpload
+                  ofertaAtual={ofertaAtual}
+                  segmentosOpcoes={segmentosOpcoes}
+                  onImportar={(novos)=>{
+                    setClientesPorOferta(prev=>{
+                      const existentes = prev[ofertaSelecionada]||[];
+                      const contasExist = new Set(existentes.map(c=>c.conta));
+                      const unicos = novos.filter(c=>!contasExist.has(c.conta));
+                      return {...prev,[ofertaSelecionada]:[...existentes,...unicos]};
+                    });
+                    setShowClienteModal(false);
+                  }}
+                  onCancelar={()=>setShowClienteModal(false)}
+                  fBRL={fBRL}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MODAL NOVA / EDITAR OFERTA ═══════════════════════════════════ */}
+      {showOfertaModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,overflowY:"auto",padding:"24px 0"}}>
+          <div style={{background:"#fff",borderRadius:20,padding:36,width:580,boxShadow:"0 20px 60px rgba(0,0,0,0.18)",margin:"auto"}}>
+            <h2 style={{margin:"0 0 22px",fontSize:19,fontWeight:800}}>{editOferta?"Editar Oferta":"Nova Oferta"}</h2>
+            {[
+              {label:"Nome do Produto", key:"produto", type:"text", placeholder:"Ex: CDB Banco XYZ 120% CDI"},
+              {label:"Prazo",           key:"prazo",   type:"text", placeholder:"Ex: 12 meses, D+30, Aberto"},
+            ].map(f=>(
+              <div key={f.key} style={{marginBottom:14}}>
+                <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>{f.label}</label>
+                <input type={f.type} placeholder={f.placeholder}
+                  value={editOferta?editOferta[f.key]:formOferta[f.key]}
+                  onChange={e=>editOferta?setEditOferta({...editOferta,[f.key]:e.target.value}):setFormOferta({...formOferta,[f.key]:e.target.value})}
+                  style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+              </div>
+            ))}
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Tipo de Produto</label>
+              <select value={editOferta?editOferta.tipo:formOferta.tipo}
+                onChange={e=>editOferta?setEditOferta({...editOferta,tipo:e.target.value}):setFormOferta({...formOferta,tipo:e.target.value})}
+                style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,outline:"none"}}>
+                {tiposOferta.map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
+              <div>
+                <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>ROA do Produto (%)</label>
+                <input type="number" step="0.01" min="0" placeholder="Ex: 1.20"
+                  value={editOferta?editOferta.roa:formOferta.roa}
+                  onChange={e=>editOferta?setEditOferta({...editOferta,roa:e.target.value}):setFormOferta({...formOferta,roa:e.target.value})}
+                  style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>ROA total do produto</div>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:13,fontWeight:700,color:"#2563eb",marginBottom:5}}>ROA do Assessor (%)</label>
+                <input type="number" step="0.01" min="0" placeholder="Ex: 0.60"
+                  value={editOferta?editOferta.roaAssessor:formOferta.roaAssessor}
+                  onChange={e=>editOferta?setEditOferta({...editOferta,roaAssessor:e.target.value}):setFormOferta({...formOferta,roaAssessor:e.target.value})}
+                  style={{width:"100%",padding:"10px 13px",border:"2px solid #bfdbfe",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none",background:"#f8fbff"}}/>
+                <div style={{fontSize:11,color:"#2563eb",marginTop:3}}>👤 Ganho do assessor</div>
+              </div>
+              <div>
+                <label style={{display:"block",fontSize:13,fontWeight:700,color:"#374151",marginBottom:5}}>Volume Alvo (R$)</label>
+                <input type="number" min="0" placeholder="Ex: 500000"
+                  value={editOferta?editOferta.volumeAlvo:formOferta.volumeAlvo}
+                  onChange={e=>editOferta?setEditOferta({...editOferta,volumeAlvo:e.target.value}):setFormOferta({...formOferta,volumeAlvo:e.target.value})}
+                  style={{width:"100%",padding:"10px 13px",border:"1px solid #e2e8f0",borderRadius:10,fontSize:14,boxSizing:"border-box",outline:"none"}}/>
+              </div>
+            </div>
+            {(()=>{
+              const roa  = parseFloat(String(editOferta?editOferta.roa:formOferta.roa).replace(",",".")) || 0;
+              const roaA = parseFloat(String(editOferta?editOferta.roaAssessor:formOferta.roaAssessor).replace(",",".")) || 0;
+              const v    = parseFloat(String(editOferta?editOferta.volumeAlvo:formOferta.volumeAlvo).replace(",",".")) || 0;
+              return v>0 ? (
+                <div style={{background:"#f8fbff",border:"1px solid #bfdbfe",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:8}}>💡 Preview do ganho estimado</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    {roa>0 && <div style={{background:"#f1f5f9",borderRadius:8,padding:"8px 12px"}}>
+                      <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase"}}>Receita do Produto</div>
+                      <div style={{fontSize:15,fontWeight:800,color:"#374151"}}>{fBRL((v*roa)/100)}</div>
+                    </div>}
+                    {roaA>0 && <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"8px 12px"}}>
+                      <div style={{fontSize:10,color:"#16a34a",fontWeight:600,textTransform:"uppercase"}}>👤 Ganho do Assessor</div>
+                      <div style={{fontSize:15,fontWeight:800,color:"#16a34a"}}>{fBRL((v*roaA)/100)}</div>
+                    </div>}
+                  </div>
+                </div>
+              ):null;
+            })()}
+            {!editOferta && (
+              <div style={{borderTop:"1px solid #f0f0f0",paddingTop:18,marginTop:4}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>Clientes vinculados</div>
+                    <div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>Adicione contas já na criação da oferta</div>
+                  </div>
+                  <button onClick={()=>setFormOferta(f=>({...f,_addingCliente:true,_clienteTemp:{conta:"",segmento:"Express",status:"ATIVO",volumeAplicado:"",net:""}}))}
+                    style={{background:"#eff6ff",color:"#2563eb",border:"1px solid #bfdbfe",borderRadius:8,padding:"6px 13px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    + Adicionar Conta
+                  </button>
+                </div>
+                {formOferta._addingCliente && (
+                  <div style={{background:"#f8fafc",borderRadius:12,padding:"14px",marginBottom:12,border:"1px solid #e2e8f0"}}>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                      <div>
+                        <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:3}}>Conta</label>
+                        <input type="text" placeholder="Ex: 2277088"
+                          value={formOferta._clienteTemp?.conta||""}
+                          onChange={e=>setFormOferta(f=>({...f,_clienteTemp:{...f._clienteTemp,conta:e.target.value}}))}
+                          style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,boxSizing:"border-box",outline:"none"}}/>
+                      </div>
+                      <div>
+                        <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:3}}>Segmento</label>
+                        <select value={formOferta._clienteTemp?.segmento||"Express"}
+                          onChange={e=>setFormOferta(f=>({...f,_clienteTemp:{...f._clienteTemp,segmento:e.target.value}}))}
+                          style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,outline:"none"}}>
+                          {segmentosOpcoes.map(s=><option key={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:3}}>Status</label>
+                        <select value={formOferta._clienteTemp?.status||"ATIVO"}
+                          onChange={e=>setFormOferta(f=>({...f,_clienteTemp:{...f._clienteTemp,status:e.target.value}}))}
+                          style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,outline:"none"}}>
+                          <option>ATIVO</option><option>INATIVO</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",marginBottom:3}}>Volume Aplicado (R$)</label>
+                        <input type="number" min="0" placeholder="Ex: 50000"
+                          value={formOferta._clienteTemp?.volumeAplicado||""}
+                          onChange={e=>setFormOferta(f=>({...f,_clienteTemp:{...f._clienteTemp,volumeAplicado:e.target.value}}))}
+                          style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,boxSizing:"border-box",outline:"none"}}/>
+                      </div>
+                    </div>
+                    {Number(formOferta._clienteTemp?.volumeAplicado)>0 && Number(formOferta.roaAssessor)>0 && (
+                      <div style={{fontSize:12,color:"#16a34a",fontWeight:700,marginBottom:8}}>
+                        👤 Ganho assessor: {fBRL((Number(formOferta._clienteTemp.volumeAplicado)*Number(formOferta.roaAssessor))/100)}
+                      </div>
+                    )}
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{
+                        const ct = formOferta._clienteTemp;
+                        if(!ct?.conta||!ct?.volumeAplicado) return;
+                        setFormOferta(f=>({...f,clientesForm:[...(f.clientesForm||[]),{...ct,volumeAplicado:Number(ct.volumeAplicado),net:Number(ct.net||0)}],_addingCliente:false,_clienteTemp:null}));
+                      }} style={{background:"#0f172a",color:"#fff",border:"none",borderRadius:8,padding:"7px 16px",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                        Confirmar
+                      </button>
+                      <button onClick={()=>setFormOferta(f=>({...f,_addingCliente:false,_clienteTemp:null}))}
+                        style={{background:"#fff",color:"#64748b",border:"1px solid #e2e8f0",borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {formOferta.clientesForm?.length>0 ? (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:4}}>
+                    {formOferta.clientesForm.map((c,i)=>(
+                      <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #f0f0f0"}}>
+                        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                          <span style={{fontWeight:700,fontSize:13}}>{c.conta}</span>
+                          <span style={{background:"#eff6ff",color:"#2563eb",padding:"2px 8px",borderRadius:5,fontSize:11,fontWeight:600}}>{c.segmento}</span>
+                          <span style={{fontSize:12,color:c.status==="ATIVO"?"#16a34a":"#94a3b8",fontWeight:600}}>{c.status}</span>
+                        </div>
+                        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                          <span style={{fontSize:13,fontWeight:700}}>{fBRL(c.volumeAplicado,true)}</span>
+                          {Number(formOferta.roaAssessor)>0 && (
+                            <span style={{fontSize:12,fontWeight:700,color:"#16a34a"}}>👤 {fBRL((c.volumeAplicado*Number(formOferta.roaAssessor))/100)}</span>
+                          )}
+                          <button onClick={()=>setFormOferta(f=>({...f,clientesForm:f.clientesForm.filter((_,j)=>j!==i)}))}
+                            style={{background:"none",border:"none",color:"#dc2626",cursor:"pointer",fontSize:14,fontWeight:700,padding:"0 4px"}}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{fontSize:12,color:"#64748b",marginTop:2}}>
+                      {formOferta.clientesForm.length} cliente{formOferta.clientesForm.length!==1?"s":""} · Volume: {fBRL(formOferta.clientesForm.reduce((a,c)=>a+c.volumeAplicado,0),true)}
+                      {Number(formOferta.roaAssessor)>0 && <> · Ganho assessor: <strong style={{color:"#16a34a"}}>{fBRL(formOferta.clientesForm.reduce((a,c)=>a+(c.volumeAplicado*Number(formOferta.roaAssessor))/100,0))}</strong></>}
+                    </div>
+                  </div>
+                ) : (
+                  !formOferta._addingCliente && (
+                    <div style={{textAlign:"center",padding:"14px",color:"#94a3b8",fontSize:13,background:"#f8fafc",borderRadius:10,border:"1px dashed #e2e8f0"}}>
+                      Nenhum cliente adicionado ainda
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:20}}>
+              <button onClick={()=>setShowOfertaModal(false)} style={{padding:"10px 20px",borderRadius:10,border:"1px solid #e2e8f0",background:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",color:"#64748b"}}>Cancelar</button>
+              <button onClick={salvarOferta} style={{padding:"10px 22px",borderRadius:10,border:"none",background:"#0f172a",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App() {
+  const [assessores, setAssessores] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [assessor, setAssessor]     = useState(null);
+  const [telaAdmin, setTelaAdmin]   = useState(false);
+
+  // Carrega assessores do Firestore ao iniciar
+  useEffect(() => {
+    const carregar = async () => {
+      try {
+        const snap = await db.collection("assessores").get();
+        if (snap.empty) {
+          // Primeira vez: popula o Firestore com os iniciais
+          const batch = db.batch();
+          ASSESSORES_INICIAIS.forEach(a => {
+            batch.set(db.collection("assessores").doc(a.codigo), a);
+          });
+          await batch.commit();
+          setAssessores(ASSESSORES_INICIAIS);
+        } else {
+          setAssessores(snap.docs.map(d => d.data()));
+        }
+      } catch(e) {
+        // Fallback local se offline
+        setAssessores(ASSESSORES_INICIAIS);
+      }
+      setCarregando(false);
+    };
+    carregar();
+  }, []);
+
+  // Restaura sessão salva
+  useEffect(() => {
+    if (assessores.length === 0) return;
+    const cod = lsGet("campanha_sessao", null);
+    if (cod) {
+      const a = assessores.find(x => x.codigo === cod);
+      if (a) setAssessor(a);
+    }
+  }, [assessores]);
+
+  const handleLogin = (a) => {
+    lsSet("campanha_sessao", a.codigo);
+    setAssessor(a);
+  };
+
+  const handleLogout = () => {
+    lsDel("campanha_sessao");
+    setAssessor(null);
+    setTelaAdmin(false);
+  };
+
+  if (carregando) return (
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Lato',sans-serif"}}>
+      <div style={{textAlign:"center",color:"#fff"}}>
+        <div style={{fontSize:40,marginBottom:16}}>🎯</div>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>Campanha do Mês</div>
+        <div style={{fontSize:13,color:"#94a3b8"}}>Carregando...</div>
+      </div>
+    </div>
+  );
+
+  if (!assessor) return <Login onLogin={handleLogin} assessores={assessores}/>;
+
+  if (telaAdmin && assessor.codigo === "admin")
+    return <GerenciarAssessores assessores={assessores} setAssessores={setAssessores} onVoltar={()=>setTelaAdmin(false)}/>;
+
+  return <Dashboard assessor={assessor} onLogout={handleLogout} onGerenciar={assessor.codigo==="admin"?()=>setTelaAdmin(true):null}/>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
